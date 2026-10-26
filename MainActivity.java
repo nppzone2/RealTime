@@ -10,6 +10,8 @@ import android.content.IntentFilter;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -85,6 +87,16 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(Ui.DARK);
         getWindow().setNavigationBarColor(Ui.BG);
         setContentView(buildLayout());
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+        }
+        if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "Hãy bật \"Hiển thị trên ứng dụng khác\" cho RealTime", Toast.LENGTH_LONG).show();
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        }
+        startForegroundService(new Intent(this, TimeGuardService.class));
     }
 
     @Override
