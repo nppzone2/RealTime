@@ -26,15 +26,27 @@ import android.widget.Toast;
 
 /**
  * Dịch vụ canh giờ chạy nền:
- *  - Đối chiếu giờ 10 phút một lần, và ngay khi giờ máy hoặc "Ngày & giờ tự động" bị đổi.
- *  - Giờ sai: phủ màn hình đỏ lên trên mọi app (kể cả glassRUN đang mở) và hiện thông báo.
- *  - Khi đi chỉnh giờ trong Cài đặt, tạm không phủ màn hình trong 3 phút để DCR thao tác được.
+ *  - Đối chiếu giờ 10 phút một lần, ngay khi giờ máy hoặc "Ngày & giờ tự động" bị đổi.
+ *  - Giờ sai: bật thông báo toàn màn hình (không vuốt bỏ được), kêu và rung mỗi 30 giây;
+ *    nếu được cấp quyền thì phủ thêm màn hình đỏ lên mọi app.
+ *  - Khi đi chỉnh giờ trong Cài đặt, tạm ngừng cảnh báo 3 phút.
  */
 public class TimeGuardService extends Service {
 
     static final long PERIOD_MS = 10 * 60_000L;
+    static final long ALERT_MS = 30_000L;
     static final long GRACE_MS = 3 * 60_000L;
     static final long FAST_MS = 3_000L;
+
+    /** Trạng thái dùng chung với AlertActivity. */
+    static volatile boolean lastOk = false;
+    static volatile String lastTitle = "";
+    static volatile String lastSub = "";
+    static volatile long graceUntil;
+
+    static boolean inGrace() {
+        return System.currentTimeMillis() < graceUntil;
+    }
 
     private static final String CH_KEEP = "guard_keep";
     private static final String CH_ALERT = "guard_alert";
@@ -49,13 +61,21 @@ public class TimeGuardService extends Service {
     private LinearLayout overlay;
     private TextView overlayTitle, overlaySub;
     private boolean checking;
-    private long graceUntil;
 
     private final Runnable periodic = new Runnable() {
         @Override
         public void run() {
             check();
             ui.postDelayed(this, PERIOD_MS);
+        }
+    };
+
+    private final Runnable alertLoop = new Runnable() {
+        @Override
+        public void run() {
+            check();
+            ui.removeCallbacks(this);
+            if (!lastOk) ui.postDelayed(this, ALERT_MS);
         }
     };
 
@@ -138,41 +158,47 @@ public class TimeGuardService extends Service {
     private void apply(TimeChecker.Result r) {
         Prefs prefs = new Prefs(this);
         if (r.passed(prefs.maxDriftMs())) {
+            lastOk = true;
+            ui.removeCallbacks(alertLoop);
             hideOverlay();
             nm.cancel(NOTI_ALERT);
             nm.notify(NOTI_KEEP, keepNotification("Giờ máy đã chuẩn"));
             return;
         }
 
-        String title;
+        String title = "Giờ máy chưa đúng";
         String sub;
         if (!r.autoOk()) {
-            title = "Giờ máy chưa đúng";
             sub = "Bật \"Ngày & giờ tự động\" và \"Múi giờ tự động\" để tiếp tục làm việc.";
         } else if (!r.networkOk) {
             title = "Chưa xác minh được giờ";
             sub = "Bật 4G hoặc Wi-Fi để RealTime đối chiếu giờ chuẩn.";
         } else if (r.isBehind()) {
-            title = "Giờ máy chưa đúng";
             sub = "Máy đang chậm " + MainActivity.formatDuration(r.offsetMs)
                     + " so với giờ chuẩn. Chỉnh lại để tiếp tục.";
         } else {
-            title = "Giờ máy chưa đúng";
             sub = "Máy đang nhanh " + MainActivity.formatDuration(-r.offsetMs)
                     + ", vượt mức cho phép " + prefs.maxDriftMinutes() + " phút. Chỉnh lại để tiếp tục.";
         }
 
+        lastOk = false;
+        lastTitle = title;
+        lastSub = sub;
         nm.notify(NOTI_KEEP, keepNotification(title));
-        nm.notify(NOTI_ALERT, alertNotification(title, sub));
 
-        if (System.currentTimeMillis() < graceUntil) {
+        ui.removeCallbacks(alertLoop);
+        ui.postDelayed(alertLoop, ALERT_MS);
+
+        if (inGrace()) {
             hideOverlay();
+            nm.cancel(NOTI_ALERT);
         } else {
+            nm.notify(NOTI_ALERT, alertNotification(title, sub));
             showOverlay(title, sub);
         }
     }
 
-    // ------------------------------------------------------------ Màn hình đỏ
+    // ------------------------------------------------------------ Màn hình đỏ phủ (khi có quyền)
 
     private void showOverlay(String title, String sub) {
         if (!Settings.canDrawOverlays(this)) return;
@@ -184,13 +210,9 @@ public class TimeGuardService extends Service {
             box.setPadding(p, p, p, p);
             box.setClickable(true);
 
-            TextView brand = Ui.text(this, "★ REALTIME", 13, 0xCCFFFFFF, true);
-            brand.setGravity(Gravity.CENTER);
-            box.addView(brand);
-
             overlayTitle = Ui.text(this, "", 26, Ui.WHITE, true);
             overlayTitle.setGravity(Gravity.CENTER);
-            box.addView(overlayTitle, Ui.lp(this, MATCH, WRAP, 0, 16, 0, 0));
+            box.addView(overlayTitle);
 
             overlaySub = Ui.text(this, "", 16, Ui.WHITE, false);
             overlaySub.setGravity(Gravity.CENTER);
@@ -239,8 +261,10 @@ public class TimeGuardService extends Service {
         if (Build.VERSION.SDK_INT < 26) return;
         nm.createNotificationChannel(new NotificationChannel(CH_KEEP, "Canh giờ",
                 NotificationManager.IMPORTANCE_LOW));
-        nm.createNotificationChannel(new NotificationChannel(CH_ALERT, "Giờ máy chưa đúng",
-                NotificationManager.IMPORTANCE_HIGH));
+        NotificationChannel alert = new NotificationChannel(CH_ALERT, "Giờ máy chưa đúng",
+                NotificationManager.IMPORTANCE_HIGH);
+        alert.enableVibration(true);
+        nm.createNotificationChannel(alert);
     }
 
     private Notification.Builder builder(String channel) {
@@ -265,13 +289,19 @@ public class TimeGuardService extends Service {
     }
 
     private Notification alertNotification(String title, String sub) {
+        PendingIntent full = PendingIntent.getActivity(this, 1,
+                new Intent(this, AlertActivity.class), PendingIntent.FLAG_IMMUTABLE);
         return builder(CH_ALERT)
                 .setContentTitle(title)
                 .setContentText(sub)
                 .setStyle(new Notification.BigTextStyle().bigText(sub))
                 .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentIntent(mainPendingIntent())
-                .setOnlyAlertOnce(true)
+                .setCategory(Notification.CATEGORY_ALARM)
+                .setPriority(Notification.PRIORITY_MAX)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setFullScreenIntent(full, true)
+                .setContentIntent(full)
+                .setOngoing(true)
                 .setAutoCancel(false)
                 .build();
     }

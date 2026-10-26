@@ -2,6 +2,7 @@ package vn.minh.giochuan;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -53,7 +54,7 @@ public class MainActivity extends Activity {
     private TextView clockDevice, dateDevice, clockNet, netLabel;
     private TextView statusIcon, statusTitle, statusSub;
     private GradientDrawable statusIconBg;
-    private Row autoRow, driftRow, overlayRow;
+    private Row autoRow, driftRow, overlayRow, fullRow;
     private TextView primaryBtn, recheckBtn;
 
     private static final class Row {
@@ -243,6 +244,11 @@ public class MainActivity extends Activity {
         card.addView(line2, Ui.lp(this, MATCH, 1, 0, 0, 0, 0));
         overlayRow = addRow(card, "Hiển thị trên ứng dụng khác", "Chạm để cấp quyền", false);
         overlayRow.root.setOnClickListener(v -> openOverlaySettings());
+        View line3 = new View(this);
+        line3.setBackgroundColor(Ui.LINE);
+        card.addView(line3, Ui.lp(this, MATCH, 1, 0, 0, 0, 0));
+        fullRow = addRow(card, "Thông báo toàn màn hình", "Chạm để bật", false);
+        fullRow.root.setOnClickListener(v -> openFullScreenSettings());
         return card;
     }
 
@@ -335,6 +341,18 @@ public class MainActivity extends Activity {
             overlayRow.sub.setText("Chạm để cấp quyền, nếu không sẽ không hiện cảnh báo");
         }
 
+        // Dòng 4: thông báo toàn màn hình (màn hình đỏ hiện khi không có quyền phủ)
+        if (Build.VERSION.SDK_INT < 34) {
+            setRow(fullRow, "Không cần", Ui.GREEN, Ui.GREEN);
+            fullRow.sub.setText("Máy này tự bật thông báo toàn màn hình");
+        } else if (((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).canUseFullScreenIntent()) {
+            setRow(fullRow, "Đã bật", Ui.GREEN, Ui.GREEN);
+            fullRow.sub.setText("Màn hình đỏ sẽ bật lên khi giờ sai");
+        } else {
+            setRow(fullRow, "Chưa bật", Ui.RED, Ui.RED);
+            fullRow.sub.setText("Chạm để bật, để màn hình đỏ hiện trên cùng");
+        }
+
         // Dòng 2: độ lệch
         driftRow.sub.setText(driftRule());
         if (last == null) {
@@ -422,6 +440,13 @@ public class MainActivity extends Activity {
                 break;
             default:
                 break;
+        }
+    }
+
+    private void openFullScreenSettings() {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startActivity(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                    Uri.parse("package:" + getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         }
     }
 

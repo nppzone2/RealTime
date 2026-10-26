@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- Cho phép thấy danh sách app trên máy để chọn app bán hàng -->
     <queries>
@@ -36,6 +37,11 @@
         <activity
             android:name=".AdminActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".AlertActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
 
         <service
             android:name=".TimeGuardService"
