@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
     private TextView clockDevice, dateDevice, clockNet, netLabel;
     private TextView statusIcon, statusTitle, statusSub;
     private GradientDrawable statusIconBg;
-    private Row autoRow, driftRow, overlayRow, fullRow;
+    private Row autoRow, driftRow, overlayRow, fullRow, usageRow;
     private TextView primaryBtn, recheckBtn;
 
     private static final class Row {
@@ -93,11 +93,6 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
         }
-        if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "Hãy bật \"Hiển thị trên ứng dụng khác\" cho RealTime", Toast.LENGTH_LONG).show();
-            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        }
         startForegroundService(new Intent(this, TimeGuardService.class));
     }
 
@@ -110,6 +105,7 @@ public class MainActivity extends Activity {
         registerReceiver(timeReceiver, f);
         ui.post(tick);
         runCheck(false);
+        guideSetup();
     }
 
     @Override
@@ -249,6 +245,12 @@ public class MainActivity extends Activity {
         card.addView(line3, Ui.lp(this, MATCH, 1, 0, 0, 0, 0));
         fullRow = addRow(card, "Thông báo toàn màn hình", "Chạm để bật", false);
         fullRow.root.setOnClickListener(v -> openFullScreenSettings());
+        View line4 = new View(this);
+        line4.setBackgroundColor(Ui.LINE);
+        card.addView(line4, Ui.lp(this, MATCH, 1, 0, 0, 0, 0));
+        usageRow = addRow(card, "Truy cập dữ liệu sử dụng", "Chạm để cấp quyền, để nhắc khi đang dùng glassRUN", false);
+        usageRow.root.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
         return card;
     }
 
@@ -353,6 +355,15 @@ public class MainActivity extends Activity {
             fullRow.sub.setText("Chạm để bật, để màn hình đỏ hiện trên cùng");
         }
 
+        // Dòng 5: quyền đọc app đang mở (để nhắc khi dùng glassRUN)
+        if (TimeGuardService.hasUsageAccess(this)) {
+            setRow(usageRow, "Đã bật", Ui.GREEN, Ui.GREEN);
+            usageRow.sub.setText("RealTime nhắc khi đang dùng glassRUN lúc giờ sai");
+        } else {
+            setRow(usageRow, "Chưa bật", Ui.RED, Ui.RED);
+            usageRow.sub.setText("Chạm để cấp quyền, để nhắc khi đang dùng glassRUN");
+        }
+
         // Dòng 2: độ lệch
         driftRow.sub.setText(driftRule());
         if (last == null) {
@@ -440,6 +451,26 @@ public class MainActivity extends Activity {
                 break;
             default:
                 break;
+        }
+    }
+
+    /** Thiết lập lần đầu: mở lần lượt từng quyền còn thiếu, mỗi quyền chỉ mở tự động một lần. */
+    private void guideSetup() {
+        if (Build.VERSION.SDK_INT >= 34
+                && !((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).canUseFullScreenIntent()
+                && !prefs.asked("fullscreen")) {
+            prefs.markAsked("fullscreen");
+            openFullScreenSettings();
+            return;
+        }
+        if (!Settings.canDrawOverlays(this) && !prefs.asked("overlay")) {
+            prefs.markAsked("overlay");
+            openOverlaySettings();
+            return;
+        }
+        if (!TimeGuardService.hasUsageAccess(this) && !prefs.asked("usage")) {
+            prefs.markAsked("usage");
+            startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         }
     }
 

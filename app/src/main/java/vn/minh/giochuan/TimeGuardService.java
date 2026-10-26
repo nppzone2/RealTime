@@ -1,10 +1,13 @@
 package vn.minh.giochuan;
 
+import android.app.AppOpsManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.app.usage.UsageEvents;
+import android.app.usage.UsageStatsManager;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -16,6 +19,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Process;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -27,8 +31,9 @@ import android.widget.Toast;
 /**
  * Dịch vụ canh giờ chạy nền:
  *  - Đối chiếu giờ 10 phút một lần, ngay khi giờ máy hoặc "Ngày & giờ tự động" bị đổi.
- *  - Giờ sai: bật thông báo toàn màn hình (không vuốt bỏ được), kêu và rung mỗi 30 giây;
- *    nếu được cấp quyền thì phủ thêm màn hình đỏ lên mọi app.
+ *  - Giờ sai: bật thông báo toàn màn hình (không vuốt bỏ được), kêu và rung mỗi 30 giây.
+ *  - Nếu có quyền truy cập dữ liệu sử dụng: nhắc ngay khi DCR mở glassRUN lúc giờ sai.
+ *  - Nếu có quyền hiển thị trên app khác: phủ thêm màn hình đỏ lên mọi app.
  *  - Khi đi chỉnh giờ trong Cài đặt, tạm ngừng cảnh báo 3 phút.
  */
 public class TimeGuardService extends Service {
@@ -37,6 +42,7 @@ public class TimeGuardService extends Service {
     static final long ALERT_MS = 30_000L;
     static final long GRACE_MS = 3 * 60_000L;
     static final long FAST_MS = 3_000L;
+    static final long NUDGE_MS = 5_000L;
 
     /** Trạng thái dùng chung với AlertActivity. */
     static volatile boolean lastOk = false;
@@ -48,10 +54,18 @@ public class TimeGuardService extends Service {
         return System.currentTimeMillis() < graceUntil;
     }
 
+    static boolean hasUsageAccess(Context c) {
+        AppOpsManager ops = (AppOpsManager) c.getSystemService(Context.APP_OPS_SERVICE);
+        return ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), c.getPackageName())
+                == AppOpsManager.MODE_ALLOWED;
+    }
+
     private static final String CH_KEEP = "guard_keep";
     private static final String CH_ALERT = "guard_alert";
+    private static final String CH_NUDGE = "guard_nudge";
     private static final int NOTI_KEEP = 7;
     private static final int NOTI_ALERT = 8;
+    private static final int NOTI_NUDGE = 9;
     private static final int MATCH = ViewGroup.LayoutParams.MATCH_PARENT;
     private static final int WRAP = ViewGroup.LayoutParams.WRAP_CONTENT;
 
@@ -61,6 +75,7 @@ public class TimeGuardService extends Service {
     private LinearLayout overlay;
     private TextView overlayTitle, overlaySub;
     private boolean checking;
+    private boolean onTargetBefore;
 
     private final Runnable periodic = new Runnable() {
         @Override
@@ -76,6 +91,15 @@ public class TimeGuardService extends Service {
             check();
             ui.removeCallbacks(this);
             if (!lastOk) ui.postDelayed(this, ALERT_MS);
+        }
+    };
+
+    private final Runnable nudge = new Runnable() {
+        @Override
+        public void run() {
+            if (!lastOk && !inGrace()) checkForeground();
+            ui.removeCallbacks(this);
+            if (!lastOk) ui.postDelayed(this, NUDGE_MS);
         }
     };
 
@@ -159,7 +183,9 @@ public class TimeGuardService extends Service {
         Prefs prefs = new Prefs(this);
         if (r.passed(prefs.maxDriftMs())) {
             lastOk = true;
+            onTargetBefore = false;
             ui.removeCallbacks(alertLoop);
+            ui.removeCallbacks(nudge);
             hideOverlay();
             nm.cancel(NOTI_ALERT);
             nm.notify(NOTI_KEEP, keepNotification("Giờ máy đã chuẩn"));
@@ -188,6 +214,8 @@ public class TimeGuardService extends Service {
 
         ui.removeCallbacks(alertLoop);
         ui.postDelayed(alertLoop, ALERT_MS);
+        ui.removeCallbacks(nudge);
+        ui.postDelayed(nudge, NUDGE_MS);
 
         if (inGrace()) {
             hideOverlay();
@@ -196,6 +224,28 @@ public class TimeGuardService extends Service {
             nm.notify(NOTI_ALERT, alertNotification(title, sub));
             showOverlay(title, sub);
         }
+    }
+
+    // ------------------------------------------------------------ Nhắc khi đang dùng glassRUN
+
+    private void checkForeground() {
+        if (!hasUsageAccess(this)) return;
+        UsageStatsManager usm = (UsageStatsManager) getSystemService(USAGE_STATS_SERVICE);
+        long now = System.currentTimeMillis();
+        UsageEvents events = usm.queryEvents(now - 20_000L, now);
+        if (events == null) return;
+        UsageEvents.Event e = new UsageEvents.Event();
+        String last = null;
+        while (events.hasNextEvent()) {
+            events.getNextEvent(e);
+            if (e.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND) last = e.getPackageName();
+        }
+        boolean onTarget = new Prefs(this).targetPackage().equals(last);
+        // Chỉ nhắc đúng lúc DCR vừa chuyển sang glassRUN, tránh nhắc liên tục
+        if (onTarget && !onTargetBefore) {
+            nm.notify(NOTI_NUDGE, nudgeNotification());
+        }
+        onTargetBefore = onTarget;
     }
 
     // ------------------------------------------------------------ Màn hình đỏ phủ (khi có quyền)
@@ -251,7 +301,7 @@ public class TimeGuardService extends Service {
         graceUntil = System.currentTimeMillis() + GRACE_MS;
         ui.removeCallbacks(fast);
         ui.post(fast);
-        Toast.makeText(this, "Chỉnh giờ rồi quay lại RealTime", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Bật \"Ngày & giờ tự động\" rồi quay lại RealTime", Toast.LENGTH_LONG).show();
         startActivity(new Intent(Settings.ACTION_DATE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
     }
 
@@ -265,6 +315,10 @@ public class TimeGuardService extends Service {
                 NotificationManager.IMPORTANCE_HIGH);
         alert.enableVibration(true);
         nm.createNotificationChannel(alert);
+        NotificationChannel nudgeCh = new NotificationChannel(CH_NUDGE, "Nhắc khi dùng glassRUN",
+                NotificationManager.IMPORTANCE_HIGH);
+        nudgeCh.enableVibration(true);
+        nm.createNotificationChannel(nudgeCh);
     }
 
     private Notification.Builder builder(String channel) {
@@ -303,6 +357,21 @@ public class TimeGuardService extends Service {
                 .setContentIntent(full)
                 .setOngoing(true)
                 .setAutoCancel(false)
+                .build();
+    }
+
+    private Notification nudgeNotification() {
+        PendingIntent full = PendingIntent.getActivity(this, 2,
+                new Intent(this, AlertActivity.class), PendingIntent.FLAG_IMMUTABLE);
+        return builder(CH_NUDGE)
+                .setContentTitle("Đang dùng glassRUN khi giờ máy chưa đúng")
+                .setContentText("Chạm để chỉnh giờ trước khi làm việc.")
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setPriority(Notification.PRIORITY_MAX)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setFullScreenIntent(full, true)
+                .setContentIntent(full)
+                .setAutoCancel(true)
                 .build();
     }
 }

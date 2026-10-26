@@ -51,4 +51,12 @@ public final class Prefs {
     public void setPin(String pin) {
         sp.edit().putString("admin_pin", pin).apply();
     }
+
+    public boolean asked(String key) {
+        return sp.getBoolean("asked_" + key, false);
+    }
+
+    public void markAsked(String key) {
+        sp.edit().putBoolean("asked_" + key, true).apply();
+    }
 }

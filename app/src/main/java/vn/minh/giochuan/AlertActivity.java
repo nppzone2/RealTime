@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.widget.Toast;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -76,6 +77,7 @@ public class AlertActivity extends Activity {
 
     private void fixTime() {
         TimeGuardService.graceUntil = System.currentTimeMillis() + TimeGuardService.GRACE_MS;
+        Toast.makeText(this, "Bật \"Ngày & giờ tự động\" rồi quay lại RealTime", Toast.LENGTH_LONG).show();
         startActivity(new Intent(Settings.ACTION_DATE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         finish();
     }
