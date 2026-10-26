@@ -19,15 +19,15 @@ jobs:
           J=app/src/main/java/vn/minh/giochuan
           R=app/src/main/res
           mkdir -p $J $R/values $R/drawable $R/mipmap-anydpi-v26
-          for f in AdminActivity MainActivity Prefs TimeChecker Ui; do
-            [ -f "$f.java" ] && mv "$f.java" $J/
+          for f in *.java; do
+            if [ -f "$f" ]; then mv "$f" $J/; fi
           done
-          [ -f AndroidManifest.xml ] && mv AndroidManifest.xml app/src/main/
+          if [ -f AndroidManifest.xml ]; then mv AndroidManifest.xml app/src/main/; fi
           for f in colors strings styles; do
-            [ -f "$f.xml" ] && mv "$f.xml" $R/values/
+            if [ -f "$f.xml" ]; then mv "$f.xml" $R/values/; fi
           done
-          [ -f ic_launcher_foreground.xml ] && mv ic_launcher_foreground.xml $R/drawable/
-          [ -f ic_launcher.xml ] && mv ic_launcher.xml $R/mipmap-anydpi-v26/
+          if [ -f ic_launcher_foreground.xml ]; then mv ic_launcher_foreground.xml $R/drawable/; fi
+          if [ -f ic_launcher.xml ]; then mv ic_launcher.xml $R/mipmap-anydpi-v26/; fi
 
           cat > settings.gradle <<'EOT'
           pluginManagement {
@@ -125,4 +125,3 @@ jobs:
           name: RealTime v1.0.${{ github.run_number }}
           files: RealTime.apk
           make_latest: true
-          
