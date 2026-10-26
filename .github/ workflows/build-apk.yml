@@ -1,0 +1,127 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sắp xếp file vào đúng thư mục Android
+        run: |
+          set -e
+          J=app/src/main/java/vn/minh/giochuan
+          R=app/src/main/res
+          mkdir -p $J $R/values $R/drawable $R/mipmap-anydpi-v26
+          for f in AdminActivity MainActivity Prefs TimeChecker Ui; do
+            [ -f "$f.java" ] && mv "$f.java" $J/
+          done
+          [ -f AndroidManifest.xml ] && mv AndroidManifest.xml app/src/main/
+          for f in colors strings styles; do
+            [ -f "$f.xml" ] && mv "$f.xml" $R/values/
+          done
+          [ -f ic_launcher_foreground.xml ] && mv ic_launcher_foreground.xml $R/drawable/
+          [ -f ic_launcher.xml ] && mv ic_launcher.xml $R/mipmap-anydpi-v26/
+
+          cat > settings.gradle <<'EOT'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "RealTime"
+          include ':app'
+          EOT
+
+          cat > build.gradle <<'EOT'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          EOT
+
+          cat > gradle.properties <<'EOT'
+          org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+          android.useAndroidX=false
+          android.nonTransitiveRClass=true
+          EOT
+
+          cat > app/build.gradle <<'EOT'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'vn.minh.giochuan'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'vn.minh.giochuan'
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+              signingConfigs {
+                  release {
+                      storeFile file('giochuan.jks')
+                      storePassword 'giochuan2026'
+                      keyAlias 'giochuan'
+                      keyPassword 'giochuan2026'
+                  }
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.release
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              lint {
+                  abortOnError false
+                  checkReleaseBuilds false
+              }
+          }
+          EOT
+
+          # Khoá ký app cố định, để các bản sau cài đè lên bản cũ được
+          echo "MIIKWAIBAzCCCgIGCSqGSIb3DQEHAaCCCfMEggnvMIIJ6zCCBbIGCSqGSIb3DQEHAaCCBaMEggWfMIIFmzCCBZcGCyqGSIb3DQEMCgECoIIFQDCCBTwwZgYJKoZIhvcNAQUNMFkwOAYJKoZIhvcNAQUMMCsEFLMisFsRrkWKlgv6eGBCNMlQ72NFAgInEAIBIDAMBggqhkiG9w0CCQUAMB0GCWCGSAFlAwQBKgQQlVBbJbNOVIvoVoe9l2bEjwSCBNBN08uGfZZoinJxznU5kmEwQDLeI/L/EIt6TpFVVKy/yd1fim8GkfKAhpE+YlHx/Zl/qgUETDcPKVjljJeDU9izeLCP6zu/UeDq42m9ZgjUNZi9PIVh9HmAPoC2K/InKWhTI2KqyVMYXDM61cnMmvKsbsnbQ5RsWlXuPZg0El4IK+taZMxNuaXPX7V6MxGTFy+0Vnr7pToaNiJznFs4xCaDYakU1wLrHbf+WswaiMcXw4Xwt4yMoYWdXGckg7PwXv8azCRQSU0G0JBLX5FTb/Q6n07zokvp5pXUh/DtNs3eAQ2+syPoBMAwdSzvxezfDvTdf8kEPkxC39O0oRMf9JgPwm5O5NqFOMMRu8JgNn/Hd/aF3octNPVEOEz55ao1NNKthBRs5XYaMD18qeTWqyzNEdNDtUPQYm/o5ZAR3VsO8u39kPqUYz9gmPUu64K2BTREA97n1h/s43Yq5TJjphrnUyhJOATlpWYhrkUl92988wc7sifmg5RIV0CheNgrbedsDKBWuPB3mbxXHpXChJ3Q8538b7TknXjTzWur/5j492d+bxRjNCrYMcbetCaSnRUgauDXaabj6WMCOcQkaMhTemdbGvPz6K4zAWx+ghdZ871oNfGkJkcdVvW7DQrZkZSeUjM0MxVXjgBZS5dsbIW5l6G0nBVQ+xnzTC8NQSxRtHZtPdiGpOjFKEvsdt3XSHmhhNM1QVWV9pSO4C3zK6NNNKVfsfr6vrNllEJfDGA9HNcwp05ByJZiunnVFptXXJ/H7dFeRTsKl9AFm72jVq8nrrnKwxmJNlIAqJG9Pc4h38VzX8gwJp1k+9u7w10sTBL2M+smyMPd9k+ODuTqX+7blKNVMp1/IuLI6WPRZ4+YJum4UX1EzWSagPaKaoVRYHsnQAqCgweR9YpnrlmxIn5aHnkm6k9XfU84OxrdiENRc0etorNSZEGO6BAvNBbY7UnB87slQT1dLoMpaMaQpd+CWh2HR+SKcNJ6r//4+JC7+nHzGb7xqd4LTGgerVFalN0q+YyOGzWwkbNYm97rBxKN8Nb+W5xBWLx8fO32FcdRWZjaykO5LcM4HIdOVTFdQSmQhS7bRgTk/bjotgnJ9nAJShubFAXO0/xT2kqK4fIiAwW5Qkz5/DEQRBf/jqPuN9kkohErCxNBCCKKNqLtvSfWj6+NXl+Bf2E96iEz6xcu7e45T917gNgnSzi1SoEVsDwQj3HBJgvuavtXo6jboBoZ4WZZBeNdK6LGe7gmcvBrO2VcAsc9tfZy+4evxkNPcTMEGJkRoPN4oSRHMNAAI1qHbUhTJT6tWnVqLo+My0ZqcSM1wK9Y3xkHJDk1Ixx7LMCtou8EoV8R8DHkaU0DBGLzrvNmbALZL3BAs51my/IFNhYPi/iqtSGsjlX4MK7DFuYN/hTyh73AnoqOcxnFTdLU3nucJUtHS2h1YK6RZehjHEEOKz7Cm4nEgC0ByqHm/+inoLCCnWfWn8wQCWQHQIB4sg1sCsyH9UVaV9BcyPMAHumFz44lf6Mk4PnT3BFUI5MF7oznqwLVP6TRDHTAzK/iLJb3xvnkTYtPn3ONNgA8RrVmvjw+xgMmM69MKOr/HVWAVxBpusQQNaoxwWMO+S/gVP86OvaiUpTsNxGcwFHwIjFEMB8GCSqGSIb3DQEJFDESHhAAZwBpAG8AYwBoAHUAYQBuMCEGCSqGSIb3DQEJFTEUBBJUaW1lIDE3OTMwMzE4ODQwODMwggQxBgkqhkiG9w0BBwagggQiMIIEHgIBADCCBBcGCSqGSIb3DQEHATBmBgkqhkiG9w0BBQ0wWTA4BgkqhkiG9w0BBQwwKwQULwPfft8VnN6E6Lz4QKC5b/BCnGgCAicQAgEgMAwGCCqGSIb3DQIJBQAwHQYJYIZIAWUDBAEqBBCmeYLn0/esijdHqEKVhWG2gIIDoJRZXRypFlHQ4MDa25zDxy+ixhmn5lmLEj2iX1HsJm2ZFM0lC0Tmd8CSYxSVgG0ALb4AqPwaHBALzdf23bYT2K8a8ujC3NfC9CIfoWJoZ+Hf8ZUSkGup/3J6PLBSLN4lxoTxIdoJfBD45ChE62GqXwnUKmKV7jBrYp5wategZCEenXsY5utmtbWImCmIG+tADVYujK/KVC3mOdA9w3bZzqjbQySlkFPaedakhJrMGTg6fFz3YhGM5kDDzS8hqtd5/HP+F0kGAISQWJQUUj3wCrL1usxVlCCd33uFuNHGRzUVLXNAiTKQKma47Wtk8do0obVIslHDfX9eWUUk2vIH47PBuzxUt+aY6ogQG0or+6olQF4KWZzwbBSChhWHhXMrTVCEg4nj1jT/BqHgPBnnEdj0d7ofmSk2Hg73mzs70dJt9P2rYa0023PZATsbQMt6gHrlnW/zl/WMtbO7Hfa0K19D2qhc1DxQdaxYx0KNlL3imsySxUbrAssmFyrAM0A3857jhaL2fijTqA1DevLF9ya4NdA4Dz9pxkPrGiQz/0TZ/6pmJf05gXinsRc8wydZPQD1ATE5271JPPEPlFZ6ikI6fm+Z7CtG3hcqxmRg36R1/Lo28WyXHYvwUQ/+N2MTHiUTn6gazGouL1PnxET8Sh8nibT32JM9wewnom/UnJw31jy82FJzyBM4ZUNTxiAxQbo0vEAsQJJnnEA/hzILZWKagwAUvn/MKwiy0x23JhVxrdSvZg795WPMFB6BN6zs6INAsKUp+WGsxXA6P95adlG1JAN/DhUJgGmtD+868QHRPzzcDeBcbsix2l/Hjn9010DKilND+jizJ28EwB7umncEq5yoU16SVF1qBhaapcXz0A5aq4kN6qefn0rH9l7vIGwX1JnxkKzNxDAZMpBXntLSA9ZQaj5UCawg9wi6GbWgTrOwJpya0AXhOXchQMwGWsiv7V2q7lJEixLuPamOV0H3z/aedDXSw92M82251pv9mRQ43Zv1UKEgpwMBpMxgpfjt3IEW6pe2fCCi+8jsFTRv9FtJJfc1mB4882+L6oed/Zo7JKXgH7hYKMqpFzk/eKDTEBWUab5GWsNRh8l8Hy5X5nq+7QSIDhXeWs3hxB6CPSDTyfu4+gEDV71HQw3TvYj6y46g1Qafw1odFYZq5drM04jo12xeuysC+97oYAaK9zmrdTeEaam5f2UZG7vWtCHiziebWcN+IHlfrNRuZrMwTTAxMA0GCWCGSAFlAwQCAQUABCDTrp3pjDjLgylijwCf6lh8MWi9jNfOjV44R5OZKNBFCgQUAWn07J0s039L8CIHISbCiwYo7DUCAicQ" | base64 -d > app/giochuan.jks
+
+          echo "Cấu trúc sau khi sắp xếp:"
+          find app -type f | sort
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Đổi tên file
+        run: cp app/build/outputs/apk/release/app-release.apk RealTime.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RealTime-APK
+          path: RealTime.apk
+
+      - name: Đăng lên mục Releases (link tải cố định)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: RealTime v1.0.${{ github.run_number }}
+          files: RealTime.apk
+          make_latest: true
