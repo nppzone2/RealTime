@@ -53,13 +53,14 @@ public class MainActivity extends Activity {
     private TextView clockDevice, dateDevice, clockNet, netLabel;
     private TextView statusIcon, statusTitle, statusSub;
     private GradientDrawable statusIconBg;
-    private Row autoRow, driftRow;
+    private Row autoRow, driftRow, overlayRow;
     private TextView primaryBtn, recheckBtn;
 
     private static final class Row {
         GradientDrawable dot;
         TextView value;
         TextView sub;
+        LinearLayout root;
     }
 
     private final BroadcastReceiver timeReceiver = new BroadcastReceiver() {
@@ -237,6 +238,11 @@ public class MainActivity extends Activity {
         line.setBackgroundColor(Ui.LINE);
         card.addView(line, Ui.lp(this, MATCH, 1, 0, 0, 0, 0));
         driftRow = addRow(card, "Độ lệch so với giờ chuẩn", driftRule(), false);
+        View line2 = new View(this);
+        line2.setBackgroundColor(Ui.LINE);
+        card.addView(line2, Ui.lp(this, MATCH, 1, 0, 0, 0, 0));
+        overlayRow = addRow(card, "Hiển thị trên ứng dụng khác", "Chạm để cấp quyền", false);
+        overlayRow.root.setOnClickListener(v -> openOverlaySettings());
         return card;
     }
 
@@ -267,6 +273,7 @@ public class MainActivity extends Activity {
         r.dot = dotBg;
         r.value = value;
         r.sub = subView;
+        r.root = row;
         return r;
     }
 
@@ -316,6 +323,16 @@ public class MainActivity extends Activity {
             setRow(autoRow, "Đã bật", Ui.GREEN, Ui.GREEN);
         } else {
             setRow(autoRow, "Đang tắt", Ui.RED, Ui.RED);
+        }
+
+        // Dòng 3: quyền hiển thị trên app khác (cần để phủ màn hình đỏ)
+        boolean canOverlay = Settings.canDrawOverlays(this);
+        if (canOverlay) {
+            setRow(overlayRow, "Đã bật", Ui.GREEN, Ui.GREEN);
+            overlayRow.sub.setText("Màn hình đỏ sẽ hiện khi giờ sai");
+        } else {
+            setRow(overlayRow, "Chưa bật", Ui.RED, Ui.RED);
+            overlayRow.sub.setText("Chạm để cấp quyền, nếu không sẽ không hiện cảnh báo");
         }
 
         // Dòng 2: độ lệch
@@ -406,6 +423,11 @@ public class MainActivity extends Activity {
             default:
                 break;
         }
+    }
+
+    private void openOverlaySettings() {
+        startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
     }
 
     private void launchTarget() {
