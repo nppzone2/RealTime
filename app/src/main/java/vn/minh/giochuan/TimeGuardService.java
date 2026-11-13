@@ -49,6 +49,7 @@ public class TimeGuardService extends Service {
     static volatile String lastTitle = "";
     static volatile String lastSub = "";
     static volatile long graceUntil;
+    static volatile boolean alertShowing;
 
     static boolean inGrace() {
         return System.currentTimeMillis() < graceUntil;
@@ -75,6 +76,7 @@ public class TimeGuardService extends Service {
     private LinearLayout overlay;
     private TextView overlayTitle, overlaySub;
     private boolean checking;
+    private boolean recheck;
     private boolean onTargetBefore;
 
     private final Runnable periodic = new Runnable() {
@@ -139,6 +141,8 @@ public class TimeGuardService extends Service {
         registerReceiver(timeReceiver, f);
         getContentResolver().registerContentObserver(
                 Settings.Global.getUriFor(Settings.Global.AUTO_TIME), false, autoObserver);
+        getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.AUTO_TIME_ZONE), false, autoObserver);
         ui.post(periodic);
     }
 
@@ -167,7 +171,10 @@ public class TimeGuardService extends Service {
     // ------------------------------------------------------------ Kiểm tra
 
     void check() {
-        if (checking) return;
+        if (checking) {
+            recheck = true;
+            return;
+        }
         checking = true;
         final ContentResolver cr = getContentResolver();
         new Thread(() -> {
@@ -175,6 +182,10 @@ public class TimeGuardService extends Service {
             ui.post(() -> {
                 checking = false;
                 apply(r);
+                if (recheck) {
+                    recheck = false;
+                    check();
+                }
             });
         }, "guard-check").start();
     }
@@ -183,6 +194,8 @@ public class TimeGuardService extends Service {
         Prefs prefs = new Prefs(this);
         if (r.passed(prefs.maxDriftMs())) {
             lastOk = true;
+            graceUntil = 0;
+            ui.removeCallbacks(fast);
             onTargetBefore = false;
             ui.removeCallbacks(alertLoop);
             ui.removeCallbacks(nudge);
@@ -223,6 +236,12 @@ public class TimeGuardService extends Service {
         } else {
             nm.notify(NOTI_ALERT, alertNotification(title, sub));
             showOverlay(title, sub);
+            if (Settings.canDrawOverlays(this) && !alertShowing) {
+                try {
+                    startActivity(new Intent(this, AlertActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (RuntimeException ignored) {
+                }
+            }
         }
     }
 

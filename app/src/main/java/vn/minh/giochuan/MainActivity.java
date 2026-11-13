@@ -48,6 +48,7 @@ public class MainActivity extends Activity {
     private TimeChecker.Result last;
     private long lastCheckElapsed;
     private boolean checking;
+    private boolean recheckPending;
     private boolean launchAfterCheck;
     private State state = State.CHECKING;
 
@@ -63,6 +64,13 @@ public class MainActivity extends Activity {
         TextView sub;
         LinearLayout root;
     }
+
+    private final android.database.ContentObserver autoObserver = new android.database.ContentObserver(ui) {
+        @Override
+        public void onChange(boolean selfChange) {
+            runCheck(false);
+        }
+    };
 
     private final BroadcastReceiver timeReceiver = new BroadcastReceiver() {
         @Override
@@ -90,28 +98,35 @@ public class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Ui.BG);
         setContentView(buildLayout());
 
-        if (Build.VERSION.SDK_INT >= 33) {
-            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
-        }
         startForegroundService(new Intent(this, TimeGuardService.class));
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        // Chưa cấp đủ quyền → chuyển sang màn hình thiết lập bắt buộc
+        if (!SetupActivity.allGranted(this) && !prefs.asked("setup_skipped")) {
+            startActivity(new Intent(this, SetupActivity.class));
+            finish();
+            return;
+        }
+        getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.AUTO_TIME), false, autoObserver);
+        getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.AUTO_TIME_ZONE), false, autoObserver);
         IntentFilter f = new IntentFilter();
         f.addAction(Intent.ACTION_TIME_CHANGED);
         f.addAction(Intent.ACTION_TIMEZONE_CHANGED);
         registerReceiver(timeReceiver, f);
         ui.post(tick);
         runCheck(false);
-        guideSetup();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         ui.removeCallbacks(tick);
+        getContentResolver().unregisterContentObserver(autoObserver);
         try {
             unregisterReceiver(timeReceiver);
         } catch (IllegalArgumentException ignored) {
@@ -289,7 +304,10 @@ public class MainActivity extends Activity {
 
     private void runCheck(boolean thenLaunch) {
         if (thenLaunch) launchAfterCheck = true;
-        if (checking) return;
+        if (checking) {
+            recheckPending = true;
+            return;
+        }
         checking = true;
         if (last == null) render();
         recheckBtn.setText("Đang kiểm tra…");
@@ -302,6 +320,11 @@ public class MainActivity extends Activity {
                 lastCheckElapsed = SystemClock.elapsedRealtime();
                 recheckBtn.setText("Kiểm tra lại");
                 render();
+                if (recheckPending) {
+                    recheckPending = false;
+                    runCheck(false);
+                    return;
+                }
                 if (launchAfterCheck) {
                     launchAfterCheck = false;
                     if (state == State.OK) launchTarget();
@@ -451,26 +474,6 @@ public class MainActivity extends Activity {
                 break;
             default:
                 break;
-        }
-    }
-
-    /** Thiết lập lần đầu: mở lần lượt từng quyền còn thiếu, mỗi quyền chỉ mở tự động một lần. */
-    private void guideSetup() {
-        if (Build.VERSION.SDK_INT >= 34
-                && !((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).canUseFullScreenIntent()
-                && !prefs.asked("fullscreen")) {
-            prefs.markAsked("fullscreen");
-            openFullScreenSettings();
-            return;
-        }
-        if (!Settings.canDrawOverlays(this) && !prefs.asked("overlay")) {
-            prefs.markAsked("overlay");
-            openOverlaySettings();
-            return;
-        }
-        if (!TimeGuardService.hasUsageAccess(this) && !prefs.asked("usage")) {
-            prefs.markAsked("usage");
-            startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         }
     }
 

@@ -24,6 +24,7 @@ public class AlertActivity extends Activity {
         @Override
         public void run() {
             if (TimeGuardService.lastOk || TimeGuardService.inGrace()) {
+                TimeGuardService.alertShowing = false;
                 finish();
                 return;
             }
@@ -72,6 +73,7 @@ public class AlertActivity extends Activity {
         box.addView(btn, Ui.lp(this, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 32, 0, 0));
 
         setContentView(box);
+        TimeGuardService.alertShowing = true;
         ui.post(watch);
     }
 
@@ -89,6 +91,7 @@ public class AlertActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        TimeGuardService.alertShowing = false;
         ui.removeCallbacksAndMessages(null);
         super.onDestroy();
     }

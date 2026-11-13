@@ -41,6 +41,29 @@ Upload lên repo các file trong thư mục `CAP_NHAT_GITHUB` (cùng tên sẽ g
    - **Thông báo** → cho phép.
    - Với máy **Xiaomi / Oppo / Vivo / Samsung**: vào *Cài đặt → Ứng dụng → RealTime* và bật **Tự khởi chạy**, đặt **Pin → Không hạn chế**. Nếu không, máy có thể tắt RealTime khi ngủ.
 
+## Thiết lập quyền (bắt buộc, làm 1 lần mỗi máy)
+Mở RealTime lần đầu sẽ vào màn hình **Thiết lập lần đầu**. Bấm **Cấp quyền lần lượt**, app tự mở từng trang, bật xong quay lại là tự chuyển sang quyền kế tiếp:
+1. Thông báo
+2. Thông báo toàn màn hình
+3. Hiển thị trên ứng dụng khác
+4. Truy cập dữ liệu sử dụng
+5. Pin không hạn chế
+
+Chưa đủ 5 quyền thì không vào được màn hình chính (quản lý có thể bỏ qua bằng mã PIN).
+Máy báo **"Cài đặt bị hạn chế"** (Pixel, Android 13+): Thông tin ứng dụng → ⋮ → **Cho phép cài đặt bị hạn chế** → quay lại bật quyền.
+
+### Cấp sẵn toàn bộ quyền bằng máy tính (tuỳ chọn, cho quản lý)
+Android không cho app tự cấp các quyền này. Muốn cấp một lần cho nhiều máy, dùng ADB (Android Platform Tools) trên máy tính, điện thoại bật *Gỡ lỗi USB*:
+```
+adb install -r RealTime.apk
+adb shell pm grant vn.minh.giochuan android.permission.POST_NOTIFICATIONS
+adb shell appops set vn.minh.giochuan SYSTEM_ALERT_WINDOW allow
+adb shell appops set vn.minh.giochuan USE_FULL_SCREEN_INTENT allow
+adb shell appops set vn.minh.giochuan GET_USAGE_STATS allow
+adb shell dumpsys deviceidle whitelist +vn.minh.giochuan
+```
+Cài qua `adb install` cũng không bị khoá "Cài đặt bị hạn chế".
+
 ## Lưu ý
 - Màn hình đỏ không chặn được nút **Back, Home, Recents**. DCR thoát được màn hình đỏ nhưng vẫn không dùng được glassRUN khi giờ chưa đúng, vì mỗi lần mở lại đều bị phủ.
 - Khi DCR bấm "Chỉnh giờ ngay", màn hình đỏ tạm ẩn 3 phút để họ chỉnh giờ. Hết 3 phút mà giờ vẫn sai thì phủ lại. Để chặn triệt để, nên kết hợp: ẩn icon glassRUN khỏi màn hình chính, quản lý kiểm tra định kỳ, hoặc dùng phần mềm quản lý thiết bị (MDM) của công ty.
