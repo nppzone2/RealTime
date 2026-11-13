@@ -154,7 +154,7 @@ public class SetupActivity extends Activity {
         root.addView(tip, Ui.lp(this, MATCH, WRAP, 16, 14, 16, 0));
 
         startBtn = Ui.button(this, "", Ui.GREEN, Ui.WHITE);
-        startBtn.setOnClickListener(v -> onStart());
+        startBtn.setOnClickListener(v -> startChain());
         root.addView(startBtn, Ui.lp(this, MATCH, WRAP, 16, 20, 16, 0));
 
         TextView skip = Ui.text(this, "Quản lý: bỏ qua bằng mã PIN", 13, Ui.MUTED, false);
@@ -234,7 +234,7 @@ public class SetupActivity extends Activity {
         startBtn.setText(done == 0 ? "Cấp quyền lần lượt" : "Tiếp tục cấp quyền còn thiếu");
     }
 
-    private void onStart() {
+    private void startChain() {
         int next = nextMissing();
         if (next < 0) return;
         chain = true;
